@@ -12,7 +12,7 @@ export const authOptions: AuthOptions = {
       clientId: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
     }),
-    
+
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -49,12 +49,12 @@ export const authOptions: AuthOptions = {
         if (!isCorrectPassword) {
           return null;
         }
+        console.log("✅ USER AUTHORIZED:", user);
 
         return user;
       },
     }),
   ],
-
   pages: {
     signIn: "/login",
   },
@@ -63,6 +63,23 @@ export const authOptions: AuthOptions = {
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
+
+  // ✅ Thêm đoạn này để đưa `role` vào token và session
+  callbacks: {
+  async jwt({ token, user }) {
+    if (user) {
+      token.role = (user as any).role; // hoặc (user as { role?: string }).role;
+    }
+    return token;
+  },
+  async session({ session, token }) {
+    if (token && session.user) {
+      (session.user as any).role = token.role; // nếu dòng này báo lỗi
+    }
+    return session;
+  },
+}
+
 };
 
 export default NextAuth(authOptions);

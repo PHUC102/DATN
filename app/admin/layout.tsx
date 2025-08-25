@@ -13,7 +13,8 @@ export default async function AdminLayout({
 }) {
   const currentUser = await getCurrentUser();
 
-  if (currentUser?.role !== "ADMIN") {
+  // ✅ So sánh role không phân biệt hoa/thường
+  if (currentUser?.role?.toLowerCase() !== "admin") {
     return (
       <AccessDenied title="Bạn cần có quyền quản trị để xem trang này." />
     );

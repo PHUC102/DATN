@@ -3,19 +3,14 @@
 import { categories } from "@/lib/products";
 import { Category } from "@/components/category";
 import { Container } from "@/components/ui/container";
-import React from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
-interface CategoriesNavbarProps { }
-
-export const CategoriesNavbar: React.FC<CategoriesNavbarProps> = () => {
-  const params = useSearchParams()
-  const category = params?.get('category')
+export const CategoriesNavbar: React.FC = () => {
+  const params = useSearchParams();
+  const category = params?.get("category");
   const pathname = usePathname();
-  if (!categories) {
-    return null;
-  }
 
+  if (!categories) return null;
   if (pathname?.startsWith("/admin")) return null;
 
   return (
@@ -25,7 +20,8 @@ export const CategoriesNavbar: React.FC<CategoriesNavbarProps> = () => {
           <Category
             key={item.label}
             label={item.label}
-            icon={React.createElement(item.icon)}
+            image={item.image} // truyền đường dẫn ảnh
+            selected={category === item.label} // xác định category nào đang chọn
           />
         ))}
       </div>

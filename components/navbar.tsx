@@ -4,7 +4,14 @@ import { Container } from "./ui/container";
 import { CartCount } from "./cart-count";
 import { UserMenu } from "./user-menu";
 import { getCurrentUser } from "@/actions/get-current-user";
+// ✅ Import đúng theo NAMED:
 import { CategoriesNavbar } from "./categories-navbar";
+
+
+
+
+
+//import { CategoriesNavbar } from "./categories-navbar";
 import { ModeToggle } from "./mode-toggle";
 import Image from "next/image";
 import SearchBar from "./SearchBar";

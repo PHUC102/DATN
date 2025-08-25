@@ -3,7 +3,7 @@
 import { useCart } from "@/hooks/use-cart";
 import { loadStripe, StripeElementsOptions } from "@stripe/stripe-js";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import toast from "react-hot-toast";
 import { Elements } from "@stripe/react-stripe-js";
 import { ImSpinner2 } from "react-icons/im";
@@ -12,9 +12,26 @@ import { AiOutlineCheckCircle } from "react-icons/ai";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
+// Stripe key
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY as string
 );
+
+// ✅ Gộp sản phẩm giống nhau
+function groupCartItems(cartItems: any[]) {
+  const grouped: Record<string, any> = {};
+
+  cartItems.forEach((item) => {
+    const key = `${item.id}-${item.color}-${item.size}`;
+    if (grouped[key]) {
+      grouped[key].quantity += item.quantity;
+    } else {
+      grouped[key] = { ...item };
+    }
+  });
+
+  return Object.values(grouped);
+}
 
 export const CheckoutClient = () => {
   const router = useRouter();
@@ -24,20 +41,28 @@ export const CheckoutClient = () => {
   const [clientSecret, setClientSecret] = useState("");
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
+  // ✅ Ngăn gọi nhiều lần
+  const hasFetchedRef = useRef(false);
+
   useEffect(() => {
-    console.log("cartProducts", cartProducts);
-    if (!cartProducts || paymentSuccess) return;
+    if (
+      hasFetchedRef.current ||          // đã gọi rồi → không gọi nữa
+      !cartProducts?.length || 
+      paymentSuccess
+    ) return;
+
+    hasFetchedRef.current = true; // Đánh dấu đã gọi rồi
 
     setIsLoading(true);
     setError(false);
 
-    console.log("called checkout client + create-payment-intent");
+    const groupedItems = groupCartItems(cartProducts);
 
     fetch("/api/create-payment-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items: cartProducts,
+        items: groupedItems,
         payment_intent_id: paymentIntent,
       }),
     })
@@ -50,20 +75,16 @@ export const CheckoutClient = () => {
         return res.json();
       })
       .then((data) => {
-        setClientSecret(data.paymentIntent.client_secret);
-        handleSetPaymentIntent(data.paymentIntent.id);
+        if (data?.paymentIntent) {
+          setClientSecret(data.paymentIntent.client_secret);
+          handleSetPaymentIntent(data.paymentIntent.id);
+        }
       })
-      .catch((error) => {
+      .catch(() => {
         setError(true);
         toast.error("Đã xảy ra lỗi!");
       });
-  }, [
-    cartProducts,
-    handleSetPaymentIntent,
-    paymentIntent,
-    paymentSuccess,
-    router,
-  ]);
+  }, [cartProducts, paymentIntent, paymentSuccess, router, handleSetPaymentIntent]);
 
   const options: StripeElementsOptions = {
     clientSecret,
@@ -94,7 +115,6 @@ export const CheckoutClient = () => {
           <h1>Đã xảy ra lỗi! 😟</h1>
         </div>
       )}
-
       {paymentSuccess && (
         <div className="text-3xl flex flex-col items-center justify-center w-full h-full gap-4">
           <div>

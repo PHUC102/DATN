@@ -266,7 +266,8 @@ export const AddProductForm = () => {
             }
 
             return (
-              <div key={item.icon} className="col-span">
+              <div key={item.label} className="col-span">
+
                 <CategoryInput
                   onClick={(category) => setCustomValue("category", category)}
                   selected={category === item.label}

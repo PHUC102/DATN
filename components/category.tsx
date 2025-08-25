@@ -2,26 +2,34 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 interface CategoryProps {
   label: string;
-  icon: React.ReactElement; // Add this line
+  image: string;
+  selected: boolean;
 }
 
-export const Category: React.FC<CategoryProps> = ({ label, icon }) => {
-  const pathname = usePathname();
-  const category = pathname ? pathname.split("/")[1] : "";
-
+export const Category: React.FC<CategoryProps> = ({ label, image, selected }) => {
   return (
     <Link href={`/${label}`}>
       <span
         className={`flex flex-col md:flex-row gap-2 items-center justify-between p-2 border-b-2 hover:text-slate-800 transition cursor-pointer
-        ${label === category
+          ${selected
             ? "border-b-slate-800 text-slate-800 dark:text-white font-semibold"
             : "border-transparent text-slate-500"
           }`}
       >
-        {icon} {/* Render the icon */}
+        {/* Hiển thị ảnh từ image */}
+        <div className="w-10 h-10 relative">
+          <img
+            src={image}
+            alt={label}
+            className="w-10 h-10 object-contain rounded-full"
+          />
+
+        </div>
+
         <span className="font-medium text-sm">{label}</span>
       </span>
     </Link>
