@@ -22,32 +22,59 @@ import {
 } from "@/components/ui/table";
 import moment from "moment";
 import "moment/locale/vi";
-moment.locale('vi');
+moment.locale("vi");
+
 interface ManageOrderClientProps {
   orders: ExtendedOrder[];
 }
 
-type ExtendedOrder = Order & {
-  user: User;
-};
+type ExtendedOrder = Order & { user: User };
 
-export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({
-  orders,
-}) => {
+// Cho phép null/undefined → chuẩn hóa uppercase an toàn
+const norm = (v: string | null | undefined) =>
+  (v ?? "").toString().trim().toUpperCase();
+
+/** Map các biến thể status về “từ điển chuẩn” để hiển thị ổn định */
+function mapPayStatus(raw: string | null | undefined) {
+  const s = norm(raw);
+
+  // các biến thể "đã thanh toán / hoàn thành" thường gặp
+  if (s === "PAID" || s === "SUCCESS" || s === "SUCCEEDED") return "PAID";
+  if (s === "COMPLETE" || s === "COMPLETED") return "COMPLETED";
+
+  // các biến thể đang xử lý
+  if (s === "PENDING" || s === "PROCESSING") return "PENDING";
+
+  // các biến thể huỷ
+  if (s === "CANCEL" || s === "CANCELED" || s === "CANCELLED") return "CANCELLED";
+
+  // fallback: để nguyên (sẽ không match -> không hiển thị badge)
+  return s;
+}
+
+function mapDeliveryStatus(raw: string | null | undefined) {
+  const s = norm(raw);
+
+  if (s === "PENDING") return "PENDING";
+  if (s === "DISPATCHED" || s === "SHIPPING") return "SHIPPING";
+  if (s === "DELIVERED") return "DELIVERED";
+
+  return s;
+}
+
+export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders }) => {
   const router = useRouter();
+
   const handleDispatch = useCallback(
     (id: string) => {
       axios
-        .put("/api/order", {
-          id,
-          deliveryStatus: "dispatched",
-        })
-        .then((res) => {
+        .put("/api/order", { id, deliveryStatus: "SHIPPING" })
+        .then(() => {
           toast.success("Đơn hàng đã được gửi đi!");
           router.refresh();
         })
         .catch((error) => {
-          toast.error("Đã xảy ra lỗi!");
+          toast.error(error?.response?.data?.error || "Đã xảy ra lỗi!");
           console.log(error);
         });
     },
@@ -57,16 +84,13 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({
   const handleDelivered = useCallback(
     (id: string) => {
       axios
-        .put("/api/order", {
-          id,
-          deliveryStatus: "delivered",
-        })
-        .then((res) => {
+        .put("/api/order", { id, deliveryStatus: "DELIVERED" })
+        .then(() => {
           toast.success("Đã giao hàng!");
           router.refresh();
         })
         .catch((error) => {
-          toast.error("Đã xảy ra lỗi!");
+          toast.error(error?.response?.data?.error || "Đã xảy ra lỗi!");
           console.log(error);
         });
     },
@@ -77,7 +101,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({
     <div className="p-8">
       <h1 className="text-2xl mb-5 text-center font-semibold">Quản lý đơn hàng</h1>
       <Table>
-        <TableCaption className="text-center lg:text-right "></TableCaption>
+        <TableCaption className="text-center lg:text-right" />
         <TableHeader>
           <TableRow>
             <TableHead>Order ID</TableHead>
@@ -89,84 +113,105 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({
             <TableHead className="text-right">Hành động</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
-          {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell>{order.id}</TableCell>
-              <TableCell>{order.user.name}</TableCell>
-              <TableCell>{FormatPrice(order.amount)} VND</TableCell>
-              <TableCell className="capitalize">
-                {order.status === "pending" && (
-                  <Status
-                    text="Đang xử lý"
-                    icon={HiMiniClock}
-                    className="bg-orange-500 text-white"
-                  />
-                )}
-                {order.status === "complete" && (
-                  <Status
-                    text="Hoàn thành"
-                    icon={MdDone}
-                    className="bg-green-500 text-white"
-                  />
-                )}
-              </TableCell>
-              <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
-              <TableCell>
-                {order.deliveryStatus === "pending" && (
-                  <Status
-                    text="Đang xử lý"
-                    icon={MdDone}
-                    className="bg-orange-700 text-white"
-                  />
-                )}
-                {order.deliveryStatus === "dispatched" && (
-                  <Status
-                    text="Đang giao hàng"
-                    icon={TbTruckDelivery}
-                    className="bg-indigo-500 text-white"
-                  />
-                )}
-                {order.deliveryStatus === "delivered" && (
-                  <Status
-                    text="Đã giao hàng"
-                    icon={MdDone}
-                    className="bg-green-500 text-white"
-                  />
-                )}
-              </TableCell>
 
-              <TableCell className="flex items-center justify-end gap-3">
-                <Button
-                  onClick={() => {
-                    handleDispatch(order.id);
-                  }}
-                  variant="outline"
-                  size="icon"
-                >
-                  <MdDeliveryDining />
-                </Button>
-                <Button
-                  onClick={() => {
-                    handleDelivered(order.id);
-                  }}
-                  variant="outline"
-                  size="icon"
-                >
-                  <MdDone />
-                </Button>
-                <Button
-                  onClick={() => {
-                    router.push(`/order/${order.id}`);
-                  }}
-                  variant="outline"
-                  size="icon"
-                >
-                  <MdRemoveRedEye />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+        <TableBody>
+          {orders.map((order) => {
+            const pay = mapPayStatus(order.status);
+            const del = mapDeliveryStatus(order.deliveryStatus);
+
+            return (
+              <TableRow key={order.id}>
+                <TableCell>{order.id}</TableCell>
+                <TableCell>{order.user?.name ?? "-"}</TableCell>
+                <TableCell>{FormatPrice(order.amount)} VND</TableCell>
+
+                {/* === Tình trạng thanh toán === */}
+                <TableCell className="capitalize">
+                  {pay === "PENDING" && (
+                    <Status
+                      text="Đang xử lý"
+                      icon={HiMiniClock}
+                      className="bg-orange-500 text-white"
+                    />
+                  )}
+                  {pay === "PAID" && (
+                    <Status
+                      text="Đã thanh toán"
+                      icon={MdDone}
+                      className="bg-emerald-600 text-white"
+                    />
+                  )}
+                  {pay === "COMPLETED" && (
+                    <Status
+                      text="Hoàn thành"
+                      icon={MdDone}
+                      className="bg-green-600 text-white"
+                    />
+                  )}
+                  {pay === "CANCELLED" && (
+                    <Status
+                      text="Đã huỷ"
+                      icon={MdDone}
+                      className="bg-rose-600 text-white"
+                    />
+                  )}
+                </TableCell>
+
+                <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
+
+                {/* === Tình trạng giao hàng === */}
+                <TableCell>
+                  {del === "PENDING" && (
+                    <Status
+                      text="Chờ giao"
+                      icon={HiMiniClock}
+                      className="bg-orange-700 text-white"
+                    />
+                  )}
+                  {del === "SHIPPING" && (
+                    <Status
+                      text="Đang giao hàng"
+                      icon={TbTruckDelivery}
+                      className="bg-indigo-500 text-white"
+                    />
+                  )}
+                  {del === "DELIVERED" && (
+                    <Status
+                      text="Đã giao hàng"
+                      icon={MdDone}
+                      className="bg-green-500 text-white"
+                    />
+                  )}
+                </TableCell>
+
+                <TableCell className="flex items-center justify-end gap-3">
+                  <Button
+                    onClick={() => handleDispatch(order.id)}
+                    variant="outline"
+                    size="icon"
+                    disabled={del === "DELIVERED"}
+                  >
+                    <MdDeliveryDining />
+                  </Button>
+                  <Button
+                    onClick={() => handleDelivered(order.id)}
+                    variant="outline"
+                    size="icon"
+                    disabled={del === "DELIVERED"}
+                  >
+                    <MdDone />
+                  </Button>
+                  <Button
+                    onClick={() => router.push(`/order/${order.id}`)}
+                    variant="outline"
+                    size="icon"
+                  >
+                    <MdRemoveRedEye />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

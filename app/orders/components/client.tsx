@@ -19,7 +19,8 @@ import {
 } from "@/components/ui/table";
 import moment from "moment";
 import "moment/locale/vi";
-moment.locale('vi');
+moment.locale("vi");
+
 interface OrderClientProps {
   orders: ExtendedOrder[];
 }
@@ -47,66 +48,107 @@ export const OrderClient: React.FC<OrderClientProps> = ({ orders }) => {
             <TableHead className="text-right">Hành động</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
-          {orders.map((order) => (
-            <TableRow key={order.id}>
-              <TableCell>{order.id}</TableCell>
-              <TableCell>{order.user.name}</TableCell>
-              <TableCell>{FormatPrice(order.amount)} VND</TableCell>
-              <TableCell className="capitalize">
-                {order.status === "pending" && (
-                  <Status
-                    text="Đang xử lý"
-                    icon={HiMiniClock}
-                    className="bg-orange-500 text-white"
-                  />
-                )}
-                {order.status === "complete" && (
-                  <Status
-                    text="Hoàn thành"
-                    icon={MdDone}
-                    className="bg-green-500 text-white"
-                  />
-                )}
-              </TableCell>
-              <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
-              <TableCell>
-                {order.deliveryStatus === "pending" && (
-                  <Status
-                    text="Đang xử lý"
-                    icon={MdDone}
-                    className="bg-orange-700 text-white"
-                  />
-                )}
-                {order.deliveryStatus === "dispatched" && (
-                  <Status
-                    text="Đang giao hàng"
-                    icon={TbTruckDelivery}
-                    className="bg-indigo-500 text-white"
-                  />
-                )}
-                {order.deliveryStatus === "delivered" && (
-                  <Status
-                    text="Đã giao hàng"
-                    icon={MdDone}
-                    className="bg-green-500 text-white"
-                  />
-                )}
-              </TableCell>
 
-              <TableCell className="flex items-center justify-end gap-3">
-                <Button
-                  onClick={() => {
-                    router.push(`/order/${order.id}`);
-                  }}
-                  variant="outline"
-                  size="icon"
-                >
-                  <MdRemoveRedEye />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+        <TableBody>
+          {orders.map((order) => {
+            // ✅ Chuẩn hoá trạng thái về UPPERCASE (tương thích dữ liệu cũ)
+            const pay = (order.status || "").toString().trim().toUpperCase();
+            const del = (order.deliveryStatus || "")
+              .toString()
+              .trim()
+              .toUpperCase()
+              // chấp nhận "DISPATCHED" cũ và map sang SHIPPING để hiển thị đúng
+              .replace(/^DISPATCHED$/, "SHIPPING");
+
+            return (
+              <TableRow key={order.id}>
+                <TableCell>{order.id}</TableCell>
+                <TableCell>{order.user?.name ?? "-"}</TableCell>
+
+                <TableCell>{FormatPrice(order.amount)} VND</TableCell>
+
+                {/* ====== Thanh toán ====== */}
+                <TableCell className="capitalize">
+                  {pay === "PENDING" && (
+                    <Status
+                      text="Chờ thanh toán"
+                      icon={HiMiniClock}
+                      className="bg-orange-500 text-white"
+                    />
+                  )}
+                  {pay === "PAID" && (
+                    <Status
+                      text="Đã thanh toán"
+                      icon={MdDone}
+                      className="bg-emerald-600 text-white"
+                    />
+                  )}
+                  {pay === "PROCESSING" && (
+                    <Status
+                      text="Đang xử lý"
+                      icon={HiMiniClock}
+                      className="bg-orange-500 text-white"
+                    />
+                  )}
+                  {pay === "COMPLETED" || pay === "COMPLETE" ? (
+                    <Status
+                      text="Hoàn Thành"
+                      icon={MdDone}
+                      className="bg-green-600 text-white"
+                    />
+                  ) : null}
+                  {pay === "CANCELLED" && (
+                    <Status
+                      text="Đã huỷ"
+                      icon={MdDone}
+                      className="bg-rose-600 text-white"
+                    />
+                  )}
+                  {!pay && <span>—</span>}
+                </TableCell>
+
+                {/* ====== Thời gian ====== */}
+                <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
+
+                {/* ====== Giao hàng ====== */}
+                <TableCell>
+                  {del === "PENDING" && (
+                    <Status
+                      text="Chờ giao"
+                      icon={HiMiniClock}
+                      className="bg-orange-700 text-white"
+                    />
+                  )}
+                  {del === "SHIPPING" && (
+                    <Status
+                      text="Đang giao hàng"
+                      icon={TbTruckDelivery}
+                      className="bg-indigo-500 text-white"
+                    />
+                  )}
+                  {del === "DELIVERED" && (
+                    <Status
+                      text="Đã giao hàng"
+                      icon={MdDone}
+                      className="bg-green-500 text-white"
+                    />
+                  )}
+                  {!del && <span>—</span>}
+                </TableCell>
+
+                {/* ====== Hành động ====== */}
+                <TableCell className="flex items-center justify-end gap-3">
+                  <Button
+                    onClick={() => router.push(`/order/${order.id}`)}
+                    variant="outline"
+                    size="icon"
+                  >
+                    <MdRemoveRedEye />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
