@@ -1,3 +1,4 @@
+// pages/api/auth/[...nextauth].ts
 import NextAuth, { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -16,40 +17,26 @@ export const authOptions: AuthOptions = {
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        email: {
-          label: "email",
-          type: "text",
-        },
-        password: {
-          label: "password",
-          type: "password",
-        },
+        email: { label: "email", type: "text" },
+        password: { label: "password", type: "password" },
       },
-
       async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) {
-          return null;
-        }
+        if (!credentials?.email || !credentials.password) return null;
 
         const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email,
-          },
+          where: { email: credentials.email },
         });
 
-        if (!user || !user?.hashedPassword) {
-          return null;
-        }
+        // Không tồn tại hoặc là tài khoản OAuth (không có hashedPassword) -> fail
+        if (!user || !user.hashedPassword) return null;
 
-        const isCorrectPassword = await bcrypt.compare(
-          credentials.password,
-          user.hashedPassword
-        );
+        const ok = await bcrypt.compare(credentials.password, user.hashedPassword);
+        if (!ok) return null;
 
-        if (!isCorrectPassword) {
-          return null;
+        // ⚠️ CHẶN nếu chưa xác thực email
+        if (!user.emailVerified) {
+          throw new Error("EMAIL_NOT_VERIFIED");
         }
-        console.log("✅ USER AUTHORIZED:", user);
 
         return user;
       },
@@ -64,22 +51,20 @@ export const authOptions: AuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET,
 
-  // ✅ Thêm đoạn này để đưa `role` vào token và session
   callbacks: {
-  async jwt({ token, user }) {
-    if (user) {
-      token.role = (user as any).role; // hoặc (user as { role?: string }).role;
-    }
-    return token;
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = (user as any).role; // đã có khai báo mở rộng JWT.role
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.role = token.role as string | undefined; // đã có khai báo mở rộng Session.user.role
+      }
+      return session;
+    },
   },
-  async session({ session, token }) {
-    if (token && session.user) {
-      (session.user as any).role = token.role; // nếu dòng này báo lỗi
-    }
-    return session;
-  },
-}
-
 };
 
 export default NextAuth(authOptions);
