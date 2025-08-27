@@ -1,3 +1,4 @@
+// app/orders/components/client.tsx
 "use client";
 
 import { Order, User } from "@prisma/client";
@@ -17,9 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import moment from "moment";
-import "moment/locale/vi";
-moment.locale("vi");
+import TimeAgo from "@/components/ui/time-ago";
 
 interface OrderClientProps {
   orders: ExtendedOrder[];
@@ -28,6 +27,29 @@ interface OrderClientProps {
 type ExtendedOrder = Order & {
   user: User;
 };
+
+// Chuẩn hoá an toàn cho string/null/undefined
+const norm = (v: string | null | undefined) =>
+  (v ?? "").toString().trim().toUpperCase();
+
+// Map các biến thể status thanh toán → “từ điển chuẩn”
+function mapPayStatus(raw: string | null | undefined) {
+  const s = norm(raw);
+  if (s === "PAID" || s === "SUCCESS" || s === "SUCCEEDED") return "PAID";
+  if (s === "COMPLETE" || s === "COMPLETED") return "COMPLETED";
+  if (s === "PENDING" || s === "PROCESSING") return "PENDING";
+  if (s === "CANCEL" || s === "CANCELED" || s === "CANCELLED") return "CANCELLED";
+  return s; // fallback
+}
+
+// Map các biến thể trạng thái giao hàng
+function mapDeliveryStatus(raw: string | null | undefined) {
+  const s = norm(raw);
+  if (s === "PENDING") return "PENDING";
+  if (s === "DISPATCHED" || s === "SHIPPING") return "SHIPPING";
+  if (s === "DELIVERED") return "DELIVERED";
+  return s;
+}
 
 export const OrderClient: React.FC<OrderClientProps> = ({ orders }) => {
   const router = useRouter();
@@ -51,52 +73,31 @@ export const OrderClient: React.FC<OrderClientProps> = ({ orders }) => {
 
         <TableBody>
           {orders.map((order) => {
-            // ✅ Chuẩn hoá trạng thái về UPPERCASE (tương thích dữ liệu cũ)
-            const pay = (order.status || "").toString().trim().toUpperCase();
-            const del = (order.deliveryStatus || "")
-              .toString()
-              .trim()
-              .toUpperCase()
-              // chấp nhận "DISPATCHED" cũ và map sang SHIPPING để hiển thị đúng
-              .replace(/^DISPATCHED$/, "SHIPPING");
+            const pay = mapPayStatus(order.status);
+            const del = mapDeliveryStatus(order.deliveryStatus);
 
             return (
               <TableRow key={order.id}>
                 <TableCell>{order.id}</TableCell>
                 <TableCell>{order.user?.name ?? "-"}</TableCell>
-
                 <TableCell>{FormatPrice(order.amount)} VND</TableCell>
 
-                {/* ====== Thanh toán ====== */}
+                {/* Tình trạng thanh toán */}
                 <TableCell className="capitalize">
-                  {pay === "PENDING" && (
-                    <Status
-                      text="Chờ thanh toán"
-                      icon={HiMiniClock}
-                      className="bg-orange-500 text-white"
-                    />
-                  )}
-                  {pay === "PAID" && (
-                    <Status
-                      text="Đã thanh toán"
-                      icon={MdDone}
-                      className="bg-emerald-600 text-white"
-                    />
-                  )}
-                  {pay === "PROCESSING" && (
+                  {["PENDING"].includes(pay) && (
                     <Status
                       text="Đang xử lý"
                       icon={HiMiniClock}
                       className="bg-orange-500 text-white"
                     />
                   )}
-                  {pay === "COMPLETED" || pay === "COMPLETE" ? (
+                  {["PAID", "COMPLETED"].includes(pay) && (
                     <Status
-                      text="Hoàn Thành"
+                      text="Hoàn thành"
                       icon={MdDone}
                       className="bg-green-600 text-white"
                     />
-                  ) : null}
+                  )}
                   {pay === "CANCELLED" && (
                     <Status
                       text="Đã huỷ"
@@ -104,13 +105,14 @@ export const OrderClient: React.FC<OrderClientProps> = ({ orders }) => {
                       className="bg-rose-600 text-white"
                     />
                   )}
-                  {!pay && <span>—</span>}
                 </TableCell>
 
-                {/* ====== Thời gian ====== */}
-                <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
+                {/* Thời gian: dùng TimeAgo (client-only) */}
+                <TableCell>
+                  <TimeAgo value={order.createdDate} />
+                </TableCell>
 
-                {/* ====== Giao hàng ====== */}
+                {/* Tình trạng giao hàng */}
                 <TableCell>
                   {del === "PENDING" && (
                     <Status
@@ -133,10 +135,8 @@ export const OrderClient: React.FC<OrderClientProps> = ({ orders }) => {
                       className="bg-green-500 text-white"
                     />
                   )}
-                  {!del && <span>—</span>}
                 </TableCell>
 
-                {/* ====== Hành động ====== */}
                 <TableCell className="flex items-center justify-end gap-3">
                   <Button
                     onClick={() => router.push(`/order/${order.id}`)}

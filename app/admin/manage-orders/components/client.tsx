@@ -1,3 +1,4 @@
+// app/admin/manage-orders/components/client.tsx
 "use client";
 
 import { Order, User } from "@prisma/client";
@@ -20,9 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import moment from "moment";
-import "moment/locale/vi";
-moment.locale("vi");
+import TimeAgo from "@/components/ui/time-ago";
 
 interface ManageOrderClientProps {
   orders: ExtendedOrder[];
@@ -30,35 +29,24 @@ interface ManageOrderClientProps {
 
 type ExtendedOrder = Order & { user: User };
 
-// Cho phép null/undefined → chuẩn hóa uppercase an toàn
+// Chuẩn hoá an toàn cho string/null/undefined
 const norm = (v: string | null | undefined) =>
   (v ?? "").toString().trim().toUpperCase();
 
-/** Map các biến thể status về “từ điển chuẩn” để hiển thị ổn định */
 function mapPayStatus(raw: string | null | undefined) {
   const s = norm(raw);
-
-  // các biến thể "đã thanh toán / hoàn thành" thường gặp
   if (s === "PAID" || s === "SUCCESS" || s === "SUCCEEDED") return "PAID";
   if (s === "COMPLETE" || s === "COMPLETED") return "COMPLETED";
-
-  // các biến thể đang xử lý
   if (s === "PENDING" || s === "PROCESSING") return "PENDING";
-
-  // các biến thể huỷ
   if (s === "CANCEL" || s === "CANCELED" || s === "CANCELLED") return "CANCELLED";
-
-  // fallback: để nguyên (sẽ không match -> không hiển thị badge)
   return s;
 }
 
 function mapDeliveryStatus(raw: string | null | undefined) {
   const s = norm(raw);
-
   if (s === "PENDING") return "PENDING";
   if (s === "DISPATCHED" || s === "SHIPPING") return "SHIPPING";
   if (s === "DELIVERED") return "DELIVERED";
-
   return s;
 }
 
@@ -75,7 +63,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
         })
         .catch((error) => {
           toast.error(error?.response?.data?.error || "Đã xảy ra lỗi!");
-          console.log(error);
+          console.error(error);
         });
     },
     [router]
@@ -91,7 +79,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
         })
         .catch((error) => {
           toast.error(error?.response?.data?.error || "Đã xảy ra lỗi!");
-          console.log(error);
+          console.error(error);
         });
     },
     [router]
@@ -101,7 +89,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
     <div className="p-8">
       <h1 className="text-2xl mb-5 text-center font-semibold">Quản lý đơn hàng</h1>
       <Table>
-        <TableCaption className="text-center lg:text-right" />
+        <TableCaption className="text-center lg:text-right "></TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>Order ID</TableHead>
@@ -125,7 +113,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
                 <TableCell>{order.user?.name ?? "-"}</TableCell>
                 <TableCell>{FormatPrice(order.amount)} VND</TableCell>
 
-                {/* === Tình trạng thanh toán === */}
+                {/* Tình trạng thanh toán */}
                 <TableCell className="capitalize">
                   {pay === "PENDING" && (
                     <Status
@@ -157,9 +145,12 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
                   )}
                 </TableCell>
 
-                <TableCell>{moment(order.createdDate).fromNow()}</TableCell>
+                {/* Thời gian: dùng TimeAgo (client-only) */}
+                <TableCell>
+                  <TimeAgo value={order.createdDate} />
+                </TableCell>
 
-                {/* === Tình trạng giao hàng === */}
+                {/* Tình trạng giao hàng */}
                 <TableCell>
                   {del === "PENDING" && (
                     <Status
@@ -190,6 +181,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
                     variant="outline"
                     size="icon"
                     disabled={del === "DELIVERED"}
+                    title="Gửi đi"
                   >
                     <MdDeliveryDining />
                   </Button>
@@ -198,6 +190,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
                     variant="outline"
                     size="icon"
                     disabled={del === "DELIVERED"}
+                    title="Đánh dấu đã giao"
                   >
                     <MdDone />
                   </Button>
@@ -205,6 +198,7 @@ export const ManagerOrderClient: React.FC<ManageOrderClientProps> = ({ orders })
                     onClick={() => router.push(`/order/${order.id}`)}
                     variant="outline"
                     size="icon"
+                    title="Xem chi tiết"
                   >
                     <MdRemoveRedEye />
                   </Button>

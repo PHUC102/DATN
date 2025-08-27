@@ -1,3 +1,4 @@
+// app/order/[orderId]/page.tsx
 import getOrderById from "@/actions/get-order-by-id";
 import { Container } from "@/components/ui/container";
 import { OrderDetails } from "../components/order-details";
@@ -12,10 +13,14 @@ export default async function OrderPage({
 }: {
   params: OrderPageProps;
 }) {
+  // Lấy đơn theo id
   const order = await getOrderById(params);
 
-  if (!order)
-    return <AccessDenied title="Có vẻ như không có Đơn hàng nào có ID đó." />;
+  if (!order) {
+    return (
+      <AccessDenied title="Có vẻ như không có Đơn hàng nào có ID đó." />
+    );
+  }
 
   return (
     <div>
