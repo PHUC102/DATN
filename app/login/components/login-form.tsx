@@ -146,7 +146,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ currentUser }) => {
         onClick={handleSubmit(onSubmit)}
         className="w-full"
       >
-        {isLoading ? <ImSpinner2 className="animate-spin" /> : "Login"}
+        {isLoading ? <ImSpinner2 className="animate-spin" /> : "Đăng nhập"}
       </Button>
 
       <span className="text-sm my-3 block text-center">

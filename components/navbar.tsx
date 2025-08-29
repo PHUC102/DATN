@@ -1,20 +1,14 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { Container } from "./ui/container";
 import { CartCount } from "./cart-count";
 import { UserMenu } from "./user-menu";
 import { getCurrentUser } from "@/actions/get-current-user";
-// ✅ Import đúng theo NAMED:
 import { CategoriesNavbar } from "./categories-navbar";
-
-
-
-
-
-//import { CategoriesNavbar } from "./categories-navbar";
 import { ModeToggle } from "./mode-toggle";
-import Image from "next/image";
 import SearchBar from "./SearchBar";
+import HideOnAdmin from "./hide-on-admin"; // 👈 thêm dòng này
 
 export const Navbar = async () => {
   const currentUser = await getCurrentUser();
@@ -29,17 +23,29 @@ export const Navbar = async () => {
                 src="/logo.png"
                 width={160}
                 height={160}
-                alt="Picture of the author"
+                alt="G Cosmetic"
               />
             </Link>
-            <div className="hidden md:block"><SearchBar /></div>
+
+            {/* Ẩn ô tìm kiếm khi ở /admin */}
+            <HideOnAdmin>
+              <div className="hidden md:block">
+                <SearchBar />
+              </div>
+            </HideOnAdmin>
+
             <div className="flex items-center gap-x-4">
-              <span>
-                <CartCount />
-              </span>
+              {/* Ẩn nút giỏ hàng khi ở /admin */}
+              <HideOnAdmin>
+                <span>
+                  <CartCount />
+                </span>
+              </HideOnAdmin>
+
               <span>
                 <ModeToggle />
               </span>
+
               <span>
                 <UserMenu currentUser={currentUser} />
               </span>
@@ -47,7 +53,11 @@ export const Navbar = async () => {
           </div>
         </Container>
       </div>
-      <CategoriesNavbar />
+
+      {/* Ẩn thanh danh mục khi ở /admin */}
+      <HideOnAdmin>
+        <CategoriesNavbar />
+      </HideOnAdmin>
     </div>
   );
 };

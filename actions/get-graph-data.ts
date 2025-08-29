@@ -1,54 +1,41 @@
+// actions/get-graph-data.ts
 import prisma from "@/lib/prismadb";
-import moment from "moment";
+import moment from "moment-timezone";
 
-export default async function getGraphData() {
-  try {
-    const startDate = moment().subtract(6, "days").startOf("day");
-    const endDate = moment().endOf("days");
+export type GraphPoint = { date: string; total: number };
 
-    const result = await prisma.order.groupBy({
-      by: ["createdDate"],
-      where: {
-        createdDate: {
-          gte: startDate.toISOString(),
-          lte: endDate.toISOString(),
-        },
-        status: "complete",
-      },
-      _sum: {
-        amount: true,
-      },
-    });
+const TZ = "Asia/Ho_Chi_Minh";
+const PAID = ["complete", "completed", "succeeded", "paid"]; // chuẩn chữ thường
 
-    const aggregateData: {
-      [day: string]: { day: string; date: string; totalAmount: number };
-    } = {};
+export default async function getGraphData(): Promise<GraphPoint[]> {
+  const end = moment().tz(TZ).endOf("day");
+  const start = end.clone().subtract(6, "days").startOf("day");
 
-    const currentDate = startDate.clone();
+  // lấy tất cả order trong 7 ngày
+  const orders = await prisma.order.findMany({
+    where: {
+      createdDate: { gte: start.toDate(), lte: end.toDate() },
+    },
+    select: { createdDate: true, amount: true, status: true },
+  });
 
-    while (currentDate <= endDate) {
-      const day = currentDate.format("dddd");
-      aggregateData[day] = {
-        day,
-        date: currentDate.format("YYYY-MM-DD"),
-        totalAmount: 0,
-      };
-
-      currentDate.add(1, "day");
-    }
-
-    result.forEach((entry) => {
-      const day = moment(entry.createdDate).format("dddd");
-      const amount = entry._sum.amount || 0;
-      aggregateData[day].totalAmount += amount / 100;
-    });
-
-    const formattedDate = Object.values(aggregateData).sort((a, b) =>
-      moment(a.date).diff(moment(b.date))
-    );
-
-    return formattedDate;
-  } catch (error: any) {
-    throw new Error(error);
+  // seed 7 ngày mặc định
+  const buckets: Record<string, number> = {};
+  for (let i = 0; i < 7; i++) {
+    const d = start.clone().add(i, "days");
+    buckets[d.format("YYYY-MM-DD")] = 0;
   }
+
+  // lọc & cộng tiền
+  for (const o of orders) {
+    if (!PAID.includes(o.status.toLowerCase())) continue; // lọc status an toàn
+    const key = moment(o.createdDate).tz(TZ).format("YYYY-MM-DD");
+    const amt =
+      typeof o.amount === "number" ? o.amount : parseFloat(String(o.amount));
+    if (!isNaN(amt)) {
+      buckets[key] = (buckets[key] ?? 0) + amt;
+    }
+  }
+
+  return Object.entries(buckets).map(([date, total]) => ({ date, total }));
 }

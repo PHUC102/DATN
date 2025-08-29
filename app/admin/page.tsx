@@ -1,22 +1,29 @@
+// app/admin/page.tsx
 import { Container } from "@/components/ui/container";
-import { Summary } from "./components/summary";
 import getProducts from "@/actions/get-products";
 import getOrders from "@/actions/get-orders";
 import getUsers from "@/actions/get-users";
-import { BarGraph } from "./components/bar-graph";
 import getGraphData from "@/actions/get-graph-data";
+import Summary from "./components/summary";
+import BarGraph from "./components/bar-graph";
 
 export default async function AdminPage() {
-  const products = await getProducts({ category: null });
-  const orders = await getOrders();
-  const users = await getUsers();
-  const graphData = await getGraphData();
+  const [products, orders, users, graphData] = await Promise.all([
+    getProducts({ category: null }),
+    getOrders(),
+    getUsers(),
+    getGraphData(),
+  ]);
 
   return (
     <div className="pt-8">
       <Container>
-        <Summary products={products} orders={orders} users={users} />
-        <div className="mt-4 md:mt-6 mx-auto w-full md:max-w-[75vw]">
+        <Summary
+          orders={orders}
+          productsCount={products?.length ?? 0}
+          usersCount={users?.length ?? 0}
+        />
+        <div className="mt-6 mx-auto w-full md:max-w-[75vw]">
           <BarGraph data={graphData} />
         </div>
       </Container>

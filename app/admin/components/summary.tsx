@@ -1,90 +1,93 @@
+// app/admin/components/summary.tsx
 "use client";
 
-import { FormatNumber, FormatPrice } from "@/lib/utils";
-import { Order, Product, User } from "@prisma/client";
-import { useEffect, useState } from "react";
+import { FormatPrice } from "@/lib/utils";
 
-interface SummaryProps {
-  orders: Order[];
-  products: Product[];
-  users: User[];
-}
+export type GraphData = { label: string; value: number };
 
-type SummaryDataType = {
-  [key: string]: {
-    label: string;
-    digit: number;
-  };
+type OrderLike = {
+  amount?: number | string | null;
+  status?: string | null;
+  createdDate?: Date | string;
 };
 
-export const Summary: React.FC<SummaryProps> = ({
-  orders,
-  products,
-  users,
-}) => {
-  const [summaryData, setSummaryData] = useState<SummaryDataType>({
-    sale: { label: "Tổng doanh thu (VND)", digit: 0 },
-    products: { label: "Tổng số sản phẩm", digit: 0 },
-    orders: { label: "Tổng số đơn đặt hàng", digit: 0 },
-    paidOrders: { label: "Đơn đặt hàng đã thanh toán", digit: 0 },
-    unpaidOrders: { label: "Đơn hàng chưa thanh toán", digit: 0 },
-    users: { label: "Tổng số người dùng", digit: 0 },
-  });
+interface SummaryProps {
+  orders: OrderLike[];
+  productsCount: number;
+  usersCount: number;
+}
 
-  useEffect(() => {
-    setSummaryData((prev) => {
-      let tempData = { ...prev };
+function isPaidStatus(s?: string | null) {
+  if (!s) return false;
+  const t = s.toLowerCase();
+  return (
+    t === "complete" ||
+    t === "completed" ||
+    t === "succeeded" ||
+    t === "paid"
+  );
+}
 
-      const totalSale = orders.reduce((acc, item) => {
-        if (item.status === "complete") {
-          return acc + item.amount;
-        } else return acc;
-      }, 0);
+function toAmount(a: number | string | null | undefined) {
+  if (typeof a === "number") return a || 0;
+  if (typeof a === "string") {
+    const n = parseFloat(a.replace(/[^\d.-]/g, ""));
+    return isNaN(n) ? 0 : n;
+  }
+  return 0;
+}
 
-      const paidOrders = orders.filter((order) => {
-        return order.status === "complete";
-      });
-
-      const unpaidOrders = orders.filter((order) => {
-        return order.status === "pending";
-      });
-
-      tempData.sale.digit = totalSale;
-      tempData.orders.digit = orders.length;
-      tempData.paidOrders.digit = paidOrders.length;
-      tempData.unpaidOrders.digit = unpaidOrders.length;
-      tempData.products.digit = products.length;
-      tempData.users.digit = users.length;
-
-      return tempData;
-    });
-  }, [orders, products, users]);
-
-  const summaryKeys = Object.keys(summaryData);
+// 👉 NAMED EXPORT
+export function Summary({ orders, productsCount, usersCount }: SummaryProps) {
+  const paidOrders = (orders || []).filter((o) => isPaidStatus(o.status));
+  const unpaidOrders = (orders || []).filter((o) => !isPaidStatus(o.status));
+  const totalSale = paidOrders.reduce((sum, o) => sum + toAmount(o.amount), 0);
 
   return (
-    <div className="max-w-[1150px] m-auto">
-      <h1 className="text-2xl mt-5 mb-4 text-center font-semibold">Thống kê</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 max-h-full overflow-y-auto gap-2 mb-5">
-        {summaryKeys &&
-          summaryKeys.map((key) => {
-            return (
-              <div
-                key={key}
-                className="rounded-xl border-2 p-4 flex flex-col items-center gap-2 transition"
-              >
-                <div className="text-xl md:text-4xl font-bold">
-                  {summaryData[key].label === "Total Sale" ? (
-                    <>{(summaryData[key].digit)}</>
-                  ) : (
-                    <>{(summaryData[key].digit)}</>
-                  )}
-                </div>
-                <div>{summaryData[key].label}</div>
-              </div>
-            );
-          })}
+    <div className="w-full">
+      {/* Heading “Thống kê” */}
+      <h2 className="text-2xl md:text-3xl font-semibold text-center mb-6">
+        Thống kê
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">
+            {FormatPrice(totalSale)} VND
+          </div>
+          <div className="mt-2 text-gray-600">Tổng doanh thu (VND)</div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">{productsCount}</div>
+          <div className="mt-2 text-gray-600">Tổng số sản phẩm</div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">
+            {orders?.length ?? 0}
+          </div>
+          <div className="mt-2 text-gray-600">Tổng số đơn đặt hàng</div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">{paidOrders.length}</div>
+          <div className="mt-2 text-gray-600">Đơn đặt hàng đã thanh toán</div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">{unpaidOrders.length}</div>
+          <div className="mt-2 text-gray-600">Đơn hàng chưa thanh toán</div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 p-6 text-center">
+          <div className="text-4xl font-extrabold">{usersCount}</div>
+          <div className="mt-2 text-gray-600">Tổng số người dùng</div>
+        </div>
       </div>
     </div>
   );
-};
+}
+
+// 👉 DEFAULT EXPORT (để nơi khác có thể `import Summary from ...`)
+export default Summary;

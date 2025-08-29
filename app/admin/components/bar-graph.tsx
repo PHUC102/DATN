@@ -1,3 +1,4 @@
+// app/admin/components/bar-graph.tsx
 "use client";
 
 import {
@@ -12,40 +13,43 @@ import { Bar } from "react-chartjs-2";
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-interface BarGraphProps {
-  data: GraphData[];
-}
+export type GraphPoint = { date: string; total: number };
 
-type GraphData = {
-  day: string;
-  date: string;
-  totalAmount: number;
-};
+export default function BarGraph({ data }: { data: GraphPoint[] }) {
+  const labels = data.map((d) => d.date);
+  const values = data.map((d) => d.total);
 
-export const BarGraph: React.FC<BarGraphProps> = ({ data }) => {
-  const labels = data.map((item) => item.date);
-  const amounts = data.map((item) => item.totalAmount * 100);
+  const fmt = (n: number) => (n ?? 0).toLocaleString("vi-VN");
 
   const chartData = {
-    labels: labels,
+    labels,
     datasets: [
       {
-        label: "Doanh thu (Ngày)",
-        data: amounts,
-        backgroundColor: "rgba(75, 192, 192, 0.6)",
+        label: "Doanh thu (VND)",
+        data: values,
+        backgroundColor: "rgba(75, 192, 192, 0.5)",
         borderColor: "rgba(75, 192, 192, 1)",
         borderWidth: 1,
       },
     ],
   };
 
-  const options = {
+  const options: any = {
     scales: {
       y: {
         beginAtZero: true,
+        ticks: { callback: (val: number) => fmt(Number(val)) },
       },
+    },
+    plugins: {
+      tooltip: {
+        callbacks: {
+          label: (ctx: any) => `Doanh thu: ${fmt(ctx.parsed.y)} VND`,
+        },
+      },
+      legend: { display: false },
     },
   };
 
   return <Bar data={chartData} options={options} />;
-};
+}
