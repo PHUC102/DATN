@@ -1,8 +1,11 @@
 // app/api/vnpay/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
-import * as crypto from "crypto";
+import crypto from "crypto";
+import moment from "moment-timezone";
 import prisma from "@/lib/prismadb";
 import { getCurrentUser } from "@/actions/get-current-user";
 
@@ -11,20 +14,7 @@ function enc(v: string) {
   return encodeURIComponent(v).replace(/%20/g, "+");
 }
 
-// YYYYMMDDHHmmss theo giờ máy (nên đặt TZ=Asia/Ho_Chi_Minh khi dev)
-function toVnpTime(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    d.getFullYear().toString() +
-    pad(d.getMonth() + 1) +
-    pad(d.getDate()) +
-    pad(d.getHours()) +
-    pad(d.getMinutes()) +
-    pad(d.getSeconds())
-  );
-}
-
-// sort A→Z + encode
+// sort A→Z + encode, bỏ key rỗng
 function buildSignedQuery(params: Record<string, string>) {
   const keys = Object.keys(params)
     .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== "")
@@ -51,11 +41,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Luôn unique để tránh code=99 do trùng TxnRef
+    // Luôn unique tránh trùng TxnRef
     const orderId: string =
       body.orderId || `ORDER-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 
-    // 1) Ghim đơn PENDING trước (để admin/user nhìn thấy ngay cả khi thoát giữa chừng)
+    // Ghim đơn PENDING trước
     const addrObj = address
       ? {
           country: "VN",
@@ -67,12 +57,8 @@ export async function POST(req: NextRequest) {
         }
       : null;
 
-    // ⚠️ Dùng `as any` tạm thời để không bị TS kẹt nếu Prisma Client chưa refresh types.
-    // Khi bạn xác nhận trong node_modules/@prisma/client/index.d.ts có:
-    //   receiverName?: string | null; receiverPhone?: string | null;
-    // thì bỏ `as any` đi để type-safe.
     const createData: any = {
-      userId: currentUser.id,    // hoặc user: { connect: { id: currentUser.id } } nếu bạn dùng relation create
+      userId: currentUser.id,
       amount: Math.round(amount),
       currency: "VND",
       status: "PENDING",
@@ -99,18 +85,19 @@ export async function POST(req: NextRequest) {
       update: updateData,
     });
 
-    // 2) Tạo URL thanh toán VNPAY
-    const ip = (req.headers.get("x-forwarded-for") || "127.0.0.1").toString();
+    // ===== VNPAY PARAMS (GMT+7) =====
+    const ip =
+      (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "127.0.0.1";
 
-    const now = new Date();
-    const createDate = toVnpTime(now);
-    const expireDate = toVnpTime(new Date(now.getTime() + 15 * 60 * 1000)); // +15 phút
+    const nowVN = moment().tz("Asia/Ho_Chi_Minh");
+    const createDate = nowVN.format("YYYYMMDDHHmmss");
+    const expireDate = nowVN.clone().add(20, "minutes").format("YYYYMMDDHHmmss"); // +20'
 
     const baseParams: Record<string, string> = {
       vnp_Version: "2.1.0",
       vnp_Command: "pay",
       vnp_TmnCode: process.env.VNP_TMN_CODE!.trim(),
-      vnp_Amount: String(Math.round(amount) * 100), // VND*100
+      vnp_Amount: String(Math.round(amount) * 100), // VND * 100
       vnp_CurrCode: "VND",
       vnp_TxnRef: orderId,
       vnp_OrderInfo: `Thanh toan don hang ${orderId}`,
@@ -120,9 +107,10 @@ export async function POST(req: NextRequest) {
       vnp_IpAddr: ip,
       vnp_CreateDate: createDate,
       vnp_ExpireDate: expireDate,
-      // ❗ KHÔNG gửi vnp_Bill_* để tránh code=99 (sandbox đôi khi rất "khó")
+      // Không gửi vnp_Bill_* để tránh phiền ở sandbox
     };
 
+    // Sort & sign SHA512 (không double-encode)
     const signData = buildSignedQuery(baseParams);
     const secureHash = crypto
       .createHmac("sha512", process.env.VNP_HASH_SECRET!.trim())
@@ -131,10 +119,11 @@ export async function POST(req: NextRequest) {
 
     const payUrl = `${process.env.VNP_URL}?${signData}&vnp_SecureHash=${secureHash}`;
 
-    // Log để debug khi cần
-    console.log("[VNPAY] create   =", createDate, "expire =", expireDate);
-    console.log("[VNPAY] signData =", signData);
-    console.log("[VNPAY] url      =", payUrl);
+    // Logs phục vụ debug trên Vercel Functions
+    console.log("[VN] now      =", nowVN.format("YYYY-MM-DD HH:mm:ss"));
+    console.log("[VN] create   =", createDate, "expire =", expireDate);
+    console.log("[VN] txnRef   =", orderId, "amount =", Math.round(amount) * 100);
+    console.log("[VNPAY] url   =", payUrl);
 
     return NextResponse.json({ url: payUrl, orderId }, { status: 200 });
   } catch (e) {
