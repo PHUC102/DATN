@@ -1,90 +1,160 @@
-'use client'
+// app/product/components/AddRating.tsx
+"use client";
 
-import Button from "@/components/Button";
-import Heading from "@/components/Heading";
-import Input from "@/components/Input";
-import { SafeUser } from "@/types";
-import { Rating } from "@mui/material";
-import { Order, Product, Review } from "@prisma/client";
-import axios from "axios";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { FieldValues, SubmitHandler, useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
+import axios from "axios";
 import toast from "react-hot-toast";
+import { FieldValues, SubmitHandler, useForm } from "react-hook-form";
+import { Rating } from "@mui/material";
+
+// Dựa vào Input/Button bạn đang dùng trong form khác.
+// Nếu bạn dùng shadcn, hãy đổi sang:
+//   import { Button } from "@/components/ui/button";
+//   import { Input } from "@/components/ui/input";
+// Ở đây mình dùng đúng kiểu Input “custom” của bạn (có register, errors, label)
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+type ReviewLite = {
+  id: string;
+  userId: string;
+};
+
+type ProductLite = {
+  id: string;
+  reviews?: ReviewLite[];
+};
+
+type OrderLite = {
+  deliveryStatus?: string | null;
+  status?: string | null;
+  products?: any[]; // mảng CartProductType[]
+};
+
+type UserLite = {
+  id: string;
+  Order?: OrderLite[];
+} | null;
 
 interface AddRatingProps {
-    product: Product & {
-        reviews: Review[]
-    };
-    user: (SafeUser & {
-        Order: Order[];
-    }) | null
+  product: ProductLite;
+  user: UserLite; // truyền currentUser (có trường Order[]) vào đây
 }
 
-const AddRating: React.FC<AddRatingProps> = ({ product, user }) => {
-    const [isLoading, setIsLoading] = useState(false)
-    const router = useRouter()
+/** chuẩn hoá status */
+function isPaid(s?: string | null) {
+  if (!s) return false;
+  const t = s.toString().trim().toLowerCase();
+  return t === "paid" || t === "succeeded" || t === "complete" || t === "completed" || t === "success";
+}
+function isDelivered(s?: string | null) {
+  if (!s) return false;
+  return s.toString().trim().toLowerCase() === "delivered";
+}
 
-    const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<FieldValues>({
-        defaultValues: {
-            comment: '',
-            rating: 0
-        }
-    })
+export default function AddRating({ product, user }: AddRatingProps) {
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
 
-    const setCustomValue = (id: string, value: any) => {
-        setValue(id, value, {
-            shouldTouch: true,
-            shouldDirty: true,
-            shouldValidate: true
-        })
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm<FieldValues>({
+    defaultValues: {
+      rating: 0,
+      comment: "",
+    },
+  });
+
+  // Đã đăng nhập chưa?
+  if (!user) return null;
+
+  // Đã đánh giá sản phẩm này trước đó?
+  const hasReviewed =
+    Array.isArray(product?.reviews) &&
+    product.reviews!.some((r) => r.userId === user.id);
+
+  // Có đơn đã giao & đã thanh toán chứa sản phẩm này?
+  const eligible =
+    Array.isArray(user?.Order) &&
+    user!.Order!.some((o) => {
+      const hasProduct =
+        Array.isArray(o.products) &&
+        o.products!.some((p: any) => p?.id === product.id);
+      return hasProduct && isDelivered(o.deliveryStatus) && isPaid(o.status);
+    });
+
+  // Nếu đã review hoặc chưa đủ điều kiện → ẩn form
+  if (hasReviewed || !eligible) return null;
+
+  const onSubmit: SubmitHandler<FieldValues> = async (data) => {
+    const rating = Number(data.rating) || 0;
+    if (rating < 1 || rating > 5) {
+      toast.error("Vui lòng chọn số sao (1–5).");
+      return;
     }
 
-    const onSubmit: SubmitHandler<FieldValues> = async (data) => {
-        setIsLoading(true);
-        if (data.rating === 0) {
-            setIsLoading(false)
-            return toast.error('No rating selected')
-        }
-        const ratingData = { ...data, userId: user?.id, product: product }
+    try {
+      setSubmitting(true);
+      const res = await axios.post("/api/rating", {
+        productId: product.id,
+        rating,
+        comment: data.comment ?? "",
+      });
 
-        axios.post('/api/rating', ratingData).then(() => {
-            toast.success('Đã đánh giá');
-            router.refresh();
-            reset();
-        }).catch((error) => {
-            console.log(error)
-            toast.error('Lỗi')
-        }).finally(() => {
-            setIsLoading(false)
-        })
+      if (res.status === 201) {
+        toast.success("Cảm ơn bạn đã đánh giá!");
+        reset({ rating: 0, comment: "" });
+        router.refresh();
+      } else {
+        toast.error(res.data?.error || "Không thể gửi đánh giá.");
+      }
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error ||
+        (err?.response?.status === 401
+          ? "Bạn cần đăng nhập."
+          : "Có lỗi xảy ra khi gửi đánh giá.");
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    if (!user || !product) return null;
+  return (
+    <div className="max-w-xl border rounded-xl p-4 space-y-3">
+      <div className="font-semibold text-lg">Đánh giá sản phẩm này</div>
 
-    const deliveredOrder = user?.Order?.some(order => order.products.find(item => item.id === product.id) && order.deliveryStatus === 'delivered')
-
-    const userReview = product?.reviews?.find(((review: Review) => {
-        return review.userId === user.id
-    }))
-
-    if (userReview || !deliveredOrder) return null
-
-    return (<div className="flex flex-col gap-2 max-w-[500px]">
-        <Heading title='Đánh giá sản phẩm này' />
-        <Rating onChange={(event, newValue) => {
-            setCustomValue('rating', newValue)
-        }} />
-        <Input
-            id='comment'
-            label="Comment"
-            disabled={isLoading}
-            register={register}
-            errors={errors}
-            required
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-gray-600">Chọn số sao:</span>
+        <Rating
+          onChange={(e, newValue) => setValue("rating", newValue ?? 0, { shouldDirty: true })}
         />
-        <Button label={isLoading ? "Loading" : 'Đánh giá sản phẩm'} onClick={handleSubmit(onSubmit)} />
-    </div>);
-}
+      </div>
 
-export default AddRating;
+      <Input
+        id="comment"
+        label="Nhận xét (tuỳ chọn)"
+        disabled={submitting}
+        register={register}
+        errors={errors}
+      />
+
+      <Button
+        onClick={handleSubmit(onSubmit)}
+        disabled={submitting}
+        className="w-full"
+      >
+        {submitting ? "Đang gửi..." : "Gửi đánh giá"}
+      </Button>
+
+      <p className="text-xs text-gray-500">
+        
+      </p>
+    </div>
+  );
+}

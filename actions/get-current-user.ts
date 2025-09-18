@@ -14,22 +14,37 @@ export async function getCurrentUser() {
       return null;
     }
 
-    const currentUser = await prisma.user.findUnique({
+    // Lấy user trước (không include Order vì include.products gây lỗi TS)
+    const user = await prisma.user.findUnique({
       where: {
-        email: session?.user?.email,
+        email: session.user.email,
       },
-      include:{Order:true},
     });
 
-    if (!currentUser) {
+    if (!user) {
       return null;
     }
 
+    // Lấy riêng orders của user — select các trường cần dùng (products, deliveryStatus, ...)
+    const orders = await prisma.order.findMany({
+      where: { userId: user.id },
+      orderBy: { createdDate: "desc" },
+      select: {
+        id: true,
+        products: true,
+        deliveryStatus: true,
+        createdDate: true,
+        status: true,
+      },
+    });
+
     return {
-      ...currentUser,
-      createdAt: currentUser.createdAt.toISOString(),
-      updatedAt: currentUser.updatedAt.toISOString(),
-      emailVerified: currentUser.emailVerified?.toISOString() || null,
+      ...user,
+      // gắn orders vào trường Order để giữ tương thích với code hiện tại
+      Order: orders,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      emailVerified: user.emailVerified?.toISOString() || null,
     };
   } catch (error) {
     return null;
