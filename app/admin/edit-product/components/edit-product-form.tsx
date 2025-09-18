@@ -272,12 +272,12 @@ export const EditProductForm: React.FC<EditProductFormProps> = ({
             }
 
             return (
-              <div key={item.icon} className="col-span">
+              <div key={item.label} className="col-span">
                 <CategoryInput
                   onClick={(category) => setCustomValue("category", category)}
                   selected={category === item.label}
                   label={item.label}
-                  icon={item.icon}
+                  image={item.image}
                 />
               </div>
             );
