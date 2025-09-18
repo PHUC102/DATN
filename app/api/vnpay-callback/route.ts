@@ -1,123 +1,81 @@
 // app/api/vnpay-callback/route.ts
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
-import * as crypto from "crypto";
+import crypto from "crypto";
 import prisma from "@/lib/prismadb";
-import { getCurrentUser } from "@/actions/get-current-user";
 
-// RAW từ params (đã decode khoảng trắng)
-function buildRawFromParams(params: URLSearchParams) {
+// encode: RFC3986 rồi thay %20 -> '+'
+function encPlus(s: string) {
+  return encodeURIComponent(s).replace(/%20/g, "+");
+}
+
+// build query A→Z từ URLSearchParams với encoder truyền vào
+function buildSigned(params: URLSearchParams, encoder: (s: string) => string) {
   const entries = Array.from(params.entries())
     .filter(([k]) => k !== "vnp_SecureHash" && k !== "vnp_SecureHashType")
     .sort(([a], [b]) => a.localeCompare(b));
-  return entries.map(([k, v]) => `${k}=${v}`).join("&");
-}
-
-// RAW từ query gốc (giữ nguyên '+')
-function buildFromOriginalSearch(originalSearch: string) {
-  const pairs = originalSearch
-    .replace(/^\?/, "")
-    .split("&")
-    .filter(Boolean)
-    .map((p) => {
-      const i = p.indexOf("=");
-      return i === -1 ? [p, ""] : [p.slice(0, i), p.slice(i + 1)];
-    })
-    .filter(([k]) => k !== "vnp_SecureHash" && k !== "vnp_SecureHashType")
-    .sort(([a], [b]) => a.localeCompare(b));
-  return pairs.map(([k, v]) => `${k}=${v}`).join("&");
-}
-
-function hmac512(data: string, secret: string) {
-  return crypto.createHmac("sha512", secret).update(data, "utf8").digest("hex");
-}
-
-// YYYYMMDDHHmmss -> Date (mặc định theo giờ máy)
-function parseVnpDate(s: string | null) {
-  if (!s || s.length !== 14) return new Date();
-  const y = Number(s.slice(0, 4));
-  const m = Number(s.slice(4, 6)) - 1;
-  const d = Number(s.slice(6, 8));
-  const hh = Number(s.slice(8, 10));
-  const mm = Number(s.slice(10, 12));
-  const ss = Number(s.slice(12, 14));
-  return new Date(y, m, d, hh, mm, ss);
+  return entries.map(([k, v]) => `${encoder(k)}=${encoder(v)}`).join("&");
 }
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+
+  const given = (url.searchParams.get("vnp_SecureHash") || "").toLowerCase();
   const secret = (process.env.VNP_HASH_SECRET || "").trim();
 
-  const given = url.searchParams.get("vnp_SecureHash") || "";
+  // Cách 1: encode theo VNPay (space -> '+')
+  const sign1 = buildSigned(url.searchParams, encPlus);
+  const calc1 = crypto.createHmac("sha512", secret).update(sign1, "utf8").digest("hex");
 
-  // Ký theo 2 cách để an toàn
-  const rawDecoded  = buildRawFromParams(url.searchParams);
-  const rawEncoded  = buildFromOriginalSearch(url.search);
-  const calcDecoded = hmac512(rawDecoded, secret);
-  const calcEncoded = hmac512(rawEncoded, secret);
+  // Cách 2: encode “thuần” (space -> %20)
+  const sign2 = buildSigned(url.searchParams, encodeURIComponent);
+  const calc2 = crypto.createHmac("sha512", secret).update(sign2, "utf8").digest("hex");
 
-  console.log("[VNPAY_CB] given       =", given);
-  console.log("[VNPAY_CB] rawDecoded  =", rawDecoded);
-  console.log("[VNPAY_CB] calcDecoded =", calcDecoded);
-  console.log("[VNPAY_CB] rawEncoded  =", rawEncoded);
-  console.log("[VNPAY_CB] calcEncoded =", calcEncoded);
+  const sigOk = given && (given === calc1 || given === calc2);
 
-  const okHash = given === calcEncoded || given === calcDecoded;
-  const respOk = url.searchParams.get("vnp_ResponseCode") === "00";
-  const transOk = url.searchParams.get("vnp_TransactionStatus") === "00";
-  const ok = okHash && respOk && transOk;
+  const txnRef   = url.searchParams.get("vnp_TxnRef") || "";
+  const respCode = url.searchParams.get("vnp_ResponseCode") || "";
+  const transSt  = url.searchParams.get("vnp_TransactionStatus"); // có thể vắng ở return
+  const amountVn = Number(url.searchParams.get("vnp_Amount") || 0) / 100;
 
-  const orderId = url.searchParams.get("vnp_TxnRef") || "";
-  const amountVnd = Number(url.searchParams.get("vnp_Amount") || "0") / 100;
-  const paidAt = parseVnpDate(url.searchParams.get("vnp_PayDate"));
+  const codeOk = respCode === "00";
+  const transOk = !transSt || transSt === "00"; // cho phép thiếu ở return
+  const ok = sigOk && codeOk && transOk;
 
-  // Nếu thanh toán OK thì update/create Order.
-  if (ok && orderId) {
-    try {
-      await prisma.order.update({
-        where: { paymentIntentId: orderId },
-        data: {
-          status: "PAID",
-          deliveryStatus: "PENDING",
-          amount: amountVnd || undefined,
-          currency: "VND",
-          createdDate: paidAt,
-        },
-      });
-      console.log("[VNPAY_CB] Order updated =", orderId);
-    } catch (e: any) {
-      // Không có -> tạo mới (nếu user còn đăng nhập)
-      console.log("[VNPAY_CB] Order not found by paymentIntentId =", orderId);
-      try {
-        const currentUser = await getCurrentUser();
-        if (currentUser?.id) {
-          await prisma.order.create({
-            data: {
-              userId: currentUser.id,
-              amount: amountVnd,
-              currency: "VND",
-              status: "PAID",
-              deliveryStatus: "PENDING",
-              paymentIntentId: orderId,
-              products: [], // Không có giỏ => để trống. Tốt nhất: tạo PENDING trước khi đẩy qua VNPAY
-              createdDate: paidAt,
-            },
-          });
-          console.log("[VNPAY_CB] Order created =", orderId, "for user =", currentUser.id);
-        } else {
-          console.warn("[VNPAY_CB] Cannot create order: user not logged in.");
-        }
-      } catch (err) {
-        console.error("[VNPAY_CB] Create order failed:", err);
+  console.log("[VNPAY_CB] sig1/ok=", given === calc1, "sig2/ok=", given === calc2,
+              "resp=", respCode, "trans=", transSt, "txnRef=", txnRef);
+
+  // Tìm order & cập nhật idempotent
+  let order: any = null;
+  if (txnRef) order = await prisma.order.findUnique({ where: { paymentIntentId: txnRef } });
+
+  try {
+    if (ok) {
+      if (order && order.status !== "PAID") {
+        await prisma.order.update({
+          where: { paymentIntentId: txnRef },
+          data: { status: "PAID", deliveryStatus: "PENDING" }, // không dùng paymentDate
+        });
+      }
+    } else {
+      if (order && order.status !== "PAID" && order.status !== "FAILED") {
+        await prisma.order.update({
+          where: { paymentIntentId: txnRef },
+          data: { status: "FAILED" },
+        });
       }
     }
+  } catch (e) {
+    console.error("[VNPAY_CB] UPDATE_ERROR", e);
   }
 
-  // Kết quả trả về UI dựa theo kết quả VNPAY, không phụ thuộc vào DB
-  const dest = new URL(
-    `/checkout?provider=vnpay&status=${ok ? "success" : "failed"}${orderId ? `&orderId=${encodeURIComponent(orderId)}` : ""}`,
-    url.origin
-  );
+  // Redirect về UI đúng route
+  const base = process.env.NEXTAUTH_URL || url.origin;
+  const dest = new URL("/checkout/result", base);
+  dest.searchParams.set("status", ok ? "success" : "fail");
+  if (txnRef) dest.searchParams.set("orderId", txnRef);
   return NextResponse.redirect(dest);
 }
